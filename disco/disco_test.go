@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/hashicorp/terraform/svchost"
-	"github.com/hashicorp/terraform/svchost/auth"
+	"github.com/hashicorp/terraform-svchost"
+	"github.com/hashicorp/terraform-svchost/auth"
 )
 
 func TestMain(m *testing.M) {

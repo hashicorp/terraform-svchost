@@ -19,8 +19,8 @@ import (
 
 	cleanhttp "github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/terraform/httpclient"
-	"github.com/hashicorp/terraform/svchost"
-	"github.com/hashicorp/terraform/svchost/auth"
+	"github.com/hashicorp/terraform-svchost"
+	"github.com/hashicorp/terraform-svchost/auth"
 )
 
 const (

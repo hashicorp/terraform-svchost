@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -283,12 +284,12 @@ func TestHostServiceOAuthClient(t *testing.T) {
 		{
 			"invalidauthz.v1",
 			nil,
-			"Failed to parse authorization URL: parse ***not A URL at all!:/<@@@@>***: first path segment in URL cannot contain colon",
+			`Failed to parse authorization URL: parse "?\*\*\*not A URL at all!:/<@@@@>\*\*\*"?: first path segment in URL cannot contain colon`,
 		},
 		{
 			"invalidtoken.v1",
 			nil,
-			"Failed to parse token URL: parse ***not A URL at all!:/<@@@@>***: first path segment in URL cannot contain colon",
+			`Failed to parse token URL: parse "?\*\*\*not A URL at all!:/<@@@@>\*\*\*"?: first path segment in URL cannot contain colon`,
 		},
 	}
 
@@ -296,7 +297,7 @@ func TestHostServiceOAuthClient(t *testing.T) {
 		t.Run(test.ID, func(t *testing.T) {
 			got, err := host.ServiceOAuthClient(test.ID)
 			if (err != nil || test.err != "") &&
-				(err == nil || !strings.Contains(err.Error(), test.err)) {
+				(err == nil || !regexp.MustCompile(test.err).MatchString(err.Error())) {
 				t.Fatalf("unexpected service URL error: %s", err)
 			}
 

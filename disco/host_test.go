@@ -148,6 +148,24 @@ func TestHostServiceOAuthClient(t *testing.T) {
 				"authz":  "/foo",
 				"token":  "***not A URL at all!:/<@@@@>***",
 			},
+			"scopesincluded.v1": map[string]interface{}{
+				"client": "scopesincluded",
+				"authz":  "/auth",
+				"token":  "/token",
+				"scopes": []interface{}{"app1.full_access", "app2.read_only"},
+			},
+			"scopesempty.v1": map[string]interface{}{
+				"client": "scopesempty",
+				"authz":  "/auth",
+				"token":  "/token",
+				"scopes": []interface{}{},
+			},
+			"scopesbad.v1": map[string]interface{}{
+				"client": "scopesbad",
+				"authz":  "/auth",
+				"token":  "/token",
+				"scopes": []interface{}{"app1.full_access", 42},
+			},
 		},
 	}
 
@@ -289,6 +307,36 @@ func TestHostServiceOAuthClient(t *testing.T) {
 			"invalidtoken.v1",
 			nil,
 			"Failed to parse token URL: parse \"***not A URL at all!:/<@@@@>***\": first path segment in URL cannot contain colon",
+		},
+		{
+			"scopesincluded.v1",
+			&OAuthClient{
+				ID:                  "scopesincluded",
+				AuthorizationURL:    mustURL(t, "https://example.com/auth"),
+				TokenURL:            mustURL(t, "https://example.com/token"),
+				MinPort:             1024,
+				MaxPort:             65535,
+				SupportedGrantTypes: NewOAuthGrantTypeSet("authz_code"),
+				Scopes:              []string{"app1.full_access", "app2.read_only"},
+			},
+			"",
+		},
+		{
+			"scopesempty.v1",
+			&OAuthClient{
+				ID:                  "scopesempty",
+				AuthorizationURL:    mustURL(t, "https://example.com/auth"),
+				TokenURL:            mustURL(t, "https://example.com/token"),
+				MinPort:             1024,
+				MaxPort:             65535,
+				SupportedGrantTypes: NewOAuthGrantTypeSet("authz_code"),
+			},
+			"",
+		},
+		{
+			"scopesbad.v1",
+			nil,
+			`Invalid "scopes" for service scopesbad.v1: all scopes must be strings`,
 		},
 	}
 

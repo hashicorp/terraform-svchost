@@ -283,12 +283,12 @@ func TestHostServiceOAuthClient(t *testing.T) {
 		{
 			"invalidauthz.v1",
 			nil,
-			"Failed to parse authorization URL: parse ***not A URL at all!:/<@@@@>***: first path segment in URL cannot contain colon",
+			"Failed to parse authorization URL: parse \"***not A URL at all!:/<@@@@>***\": first path segment in URL cannot contain colon",
 		},
 		{
 			"invalidtoken.v1",
 			nil,
-			"Failed to parse token URL: parse ***not A URL at all!:/<@@@@>***: first path segment in URL cannot contain colon",
+			"Failed to parse token URL: parse \"***not A URL at all!:/<@@@@>***\": first path segment in URL cannot contain colon",
 		},
 	}
 

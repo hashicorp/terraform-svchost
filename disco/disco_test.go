@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-svchost"
 	"github.com/hashicorp/terraform-svchost/auth"
@@ -268,6 +269,7 @@ func TestDiscover(t *testing.T) {
 
 		d := New()
 		discovered, err := d.Discover(host)
+
 		if err != nil {
 			t.Fatalf("unexpected discovery error: %s", err)
 		}
@@ -275,6 +277,41 @@ func TestDiscover(t *testing.T) {
 		// Returned discovered.services should be nil (empty).
 		if discovered.services != nil {
 			t.Errorf("discovered.services not nil (empty); should be")
+		}
+	})
+	t.Run("discovery error", func(t *testing.T) {
+		// Make a channel and then ignore messages to simulate a Client.Timeout
+		donec := make(chan bool, 1)
+		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+			<-donec
+		})
+		defer close()
+		defer func() { donec <- true }()
+
+		givenHost := "localhost" + portStr
+		host, err := svchost.ForComparison(givenHost)
+		if err != nil {
+			t.Fatalf("test server hostname is invalid: %s", err)
+		}
+
+		d := New()
+		
+		transport := d.Transport.(*http.Transport)
+
+		origTimeout := transport.ResponseHeaderTimeout
+		transport.ResponseHeaderTimeout = 10 * time.Millisecond
+		defer func() { transport.ResponseHeaderTimeout = origTimeout }()
+		discovered, err := d.Discover(host)
+
+		// Verify the error is an ErrServiceDiscoveryNetworkRequest
+		_, isDiscoError := err.(ErrServiceDiscoveryNetworkRequest)
+		if !isDiscoError {
+			t.Fatalf("was not an ErrServiceDiscoveryNetworkRequest, got %T %v", err, err)
+		}
+
+		// Returned discovered should be nil (empty).
+		if discovered != nil {
+			t.Errorf("discovered not nil (empty); should be")
 		}
 	})
 	t.Run("redirect", func(t *testing.T) {

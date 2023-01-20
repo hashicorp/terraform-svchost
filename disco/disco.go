@@ -49,6 +49,17 @@ type Disco struct {
 	Transport http.RoundTripper
 }
 
+// ErrServiceDiscoveryNetworkRequest represents the error that occurs when
+// the service discovery fails for an unknown network problem.
+type ErrServiceDiscoveryNetworkRequest struct {
+	err error
+}
+
+func (e ErrServiceDiscoveryNetworkRequest) Error() string {
+	wrapped_error := fmt.Errorf("failed to request discovery document: %w", e.err)
+	return wrapped_error.Error()
+}
+
 // New returns a new initialized discovery object.
 func New() *Disco {
 	return NewWithCredentialsSource(nil)
@@ -204,7 +215,7 @@ func (d *Disco) discover(hostname svchost.Hostname) (*Host, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to request discovery document: %v", err)
+		return nil, ErrServiceDiscoveryNetworkRequest{err}
 	}
 	defer resp.Body.Close()
 
@@ -222,16 +233,16 @@ func (d *Disco) discover(hostname svchost.Hostname) (*Host, error) {
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Failed to request discovery document: %s", resp.Status)
+		return nil, fmt.Errorf("failed to request discovery document: %s", resp.Status)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return nil, fmt.Errorf("Discovery URL has a malformed Content-Type %q", contentType)
+		return nil, fmt.Errorf("discovery URL has a malformed Content-Type %q", contentType)
 	}
 	if mediaType != "application/json" {
-		return nil, fmt.Errorf("Discovery URL returned an unsupported Content-Type %q", mediaType)
+		return nil, fmt.Errorf("discovery URL returned an unsupported Content-Type %q", mediaType)
 	}
 
 	// This doesn't catch chunked encoding, because ContentLength is -1 in that case.
@@ -239,7 +250,7 @@ func (d *Disco) discover(hostname svchost.Hostname) (*Host, error) {
 		// Size limit here is not a contractual requirement and so we may
 		// adjust it over time if we find a different limit is warranted.
 		return nil, fmt.Errorf(
-			"Discovery doc response is too large (got %d bytes; limit %d)",
+			"discovery doc response is too large (got %d bytes; limit %d)",
 			resp.ContentLength, maxDiscoDocBytes,
 		)
 	}
@@ -250,13 +261,13 @@ func (d *Disco) discover(hostname svchost.Hostname) (*Host, error) {
 
 	servicesBytes, err := ioutil.ReadAll(lr)
 	if err != nil {
-		return nil, fmt.Errorf("Error reading discovery document body: %v", err)
+		return nil, fmt.Errorf("error reading discovery document body: %v", err)
 	}
 
 	var services map[string]interface{}
 	err = json.Unmarshal(servicesBytes, &services)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to decode discovery document as a JSON object: %v", err)
+		return nil, fmt.Errorf("failed to decode discovery document as a JSON object: %v", err)
 	}
 	host.services = services
 

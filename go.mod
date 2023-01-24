@@ -3,7 +3,7 @@ module github.com/hashicorp/terraform-svchost
 go 1.12
 
 require (
-	github.com/google/go-cmp v0.3.1
+	github.com/google/go-cmp v0.5.9
 	github.com/hashicorp/go-cleanhttp v0.5.1
 	github.com/hashicorp/go-version v1.2.0
 	github.com/zclconf/go-cty v1.1.0

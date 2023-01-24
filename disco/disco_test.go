@@ -295,7 +295,7 @@ func TestDiscover(t *testing.T) {
 		}
 
 		d := New()
-		
+
 		transport := d.Transport.(*http.Transport)
 
 		origTimeout := transport.ResponseHeaderTimeout

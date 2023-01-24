@@ -32,8 +32,16 @@ jobs:
       - name: Ensure nothing changed
         run: git diff --exit-code
 
-      - name: Format
-        run: if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then exit 1; fi
+      - name: Check format
+        run: |
+          go fmt ./...
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "Formatting is consistent with 'go fmt'."
+          else
+            echo "Run 'go fmt ./...' to automatically apply standard Go style to all packages."
+            git status --porcelain
+            exit 1
+          fi
 
       - name: Run tests
         run: go test -v -race ./...

@@ -1,5 +1,5 @@
 <!--
-Thank you for contributing to hashicorp/terraform-svchost! Please read docs/CONTRIBUTING.md for detailed information when preparing your change.
+Thank you for contributing to hashicorp/terraform-svchost! Please read CONTRIBUTING.md for detailed information when preparing your change.
 
 Please fill out the remaining template to assist code reviewers and testers with incorporating your change. If a section does not apply, feel free to delete it.
 -->

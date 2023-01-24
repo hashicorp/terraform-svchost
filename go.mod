@@ -6,7 +6,7 @@ require (
 	github.com/google/go-cmp v0.3.1
 	github.com/hashicorp/go-cleanhttp v0.5.1
 	github.com/hashicorp/go-version v1.2.0
-	github.com/zclconf/go-cty v1.1.0
+	github.com/zclconf/go-cty v1.12.1
 	golang.org/x/net v0.5.0
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 )

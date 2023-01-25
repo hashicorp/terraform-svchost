@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/terraform-svchost"
+	svchost "github.com/hashicorp/terraform-svchost"
 	"github.com/hashicorp/terraform-svchost/auth"
 )
 
@@ -361,6 +361,74 @@ func TestDiscover(t *testing.T) {
 			t.Errorf("incorrect base url %s; want %s", gotBaseURL, wantBaseURL)
 		}
 
+	})
+
+	t.Run("alias", func(t *testing.T) {
+		// The server will listen on localhost and we will expect this response
+		// by requesting discovery on the alias.
+		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+			resp := []byte(`
+{
+"thingy.v1": "http://example.com/foo"
+}
+`)
+			w.Header().Add("Content-Type", "application/json")
+			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
+			w.Write(resp)
+		})
+		defer close()
+
+		target, err := svchost.ForComparison("localhost" + portStr)
+		if err != nil {
+			t.Fatalf("test server hostname is invalid: %s", err)
+		}
+		alias, err := svchost.ForComparison("not-a-real-host-dont-even-try.no")
+		if err != nil {
+			t.Fatalf("alias hostname is invalid: %s", err)
+		}
+
+		d := New()
+		d.SetCredentialsSource(auth.StaticCredentialsSource(map[svchost.Hostname]map[string]any{
+			target: {
+				"token": "hunter2",
+			},
+		}))
+
+		d.Alias(alias, target)
+
+		discovered, err := d.Discover(alias)
+		if err != nil {
+			t.Fatalf("unexpected discovery error: %s", err)
+		}
+
+		gotURL, err := discovered.ServiceURL("thingy.v1")
+		if err != nil {
+			t.Fatalf("unexpected service URL error: %s", err)
+		}
+		if gotURL == nil {
+			t.Fatalf("found no URL for thingy.v1")
+		}
+		if got, want := gotURL.String(), "http://example.com/foo"; got != want {
+			t.Fatalf("wrong result %q; want %q", got, want)
+		}
+
+		aliasCreds, err := d.CredentialsForHost(alias)
+		if err != nil {
+			t.Fatalf("unexpected credentials error: %s", err)
+		}
+		if aliasCreds.Token() != "hunter2" {
+			t.Fatalf("found no credentials for alias")
+		}
+
+		d.ForgetAlias(alias)
+
+		discovered, err = d.Discover(alias)
+		if err == nil {
+			t.Error("expected error, got none")
+		}
+		if discovered != nil {
+			t.Error("expected discovered to be nil, got non-nil")
+		}
 	})
 }
 

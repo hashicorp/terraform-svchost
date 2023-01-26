@@ -17,7 +17,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/hashicorp/terraform-svchost"
+	svchost "github.com/hashicorp/terraform-svchost"
 	"github.com/hashicorp/terraform-svchost/auth"
 )
 
@@ -154,7 +154,22 @@ func (d *Disco) Discover(hostname svchost.Hostname) (*Host, error) {
 		return host, nil
 	}
 
-	host, err := d.discover(hostname)
+	host, err := d.discover("https", hostname)
+	if err != nil {
+		return nil, err
+	}
+	d.hostCache[hostname] = host
+
+	return host, nil
+}
+
+// DiscoverHTTP is an HTTP variant of Discover. See Discover for documentation.
+func (d *Disco) DiscoverHTTP(hostname svchost.Hostname) (*Host, error) {
+	if host, cached := d.hostCache[hostname]; cached {
+		return host, nil
+	}
+
+	host, err := d.discover("http", hostname)
 	if err != nil {
 		return nil, err
 	}
@@ -175,9 +190,9 @@ func (d *Disco) DiscoverServiceURL(hostname svchost.Hostname, serviceID string) 
 
 // discover implements the actual discovery process, with its result cached
 // by the public-facing Discover method.
-func (d *Disco) discover(hostname svchost.Hostname) (*Host, error) {
+func (d *Disco) discover(scheme string, hostname svchost.Hostname) (*Host, error) {
 	discoURL := &url.URL{
-		Scheme: "https",
+		Scheme: scheme,
 		Host:   hostname.String(),
 		Path:   discoPath,
 	}

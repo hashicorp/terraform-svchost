@@ -1,4 +1,4 @@
-# Terraform svchost package
+# terraform-svchost
 
 [![CI Tests](https://github.com/hashicorp/terraform-svchost/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hashicorp/terraform-svchost/actions/workflows/ci.yml)
 [![GitHub license](https://img.shields.io/github/license/hashicorp/terraform-svchost.svg)](https://github.com/hashicorp/terraform-svchost/blob/main/LICENSE)

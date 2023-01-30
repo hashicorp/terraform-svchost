@@ -1,3 +1,5 @@
+// Copyright (c) HashiCorp, Inc.
+
 // Package disco handles Terraform's remote service discovery protocol.
 //
 // This protocol allows mapping from a service hostname, as produced by the

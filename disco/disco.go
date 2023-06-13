@@ -16,6 +16,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	svchost "github.com/hashicorp/terraform-svchost"
@@ -43,9 +44,12 @@ var httpTransport = defaultHttpTransport()
 // hostnames and caches the results by hostname to avoid repeated requests
 // for the same information.
 type Disco struct {
+	// must lock "mu" while interacting with these maps
 	aliases   map[svchost.Hostname]svchost.Hostname
 	hostCache map[svchost.Hostname]*Host
-	credsSrc  auth.CredentialsSource
+	mu        sync.Mutex
+
+	credsSrc auth.CredentialsSource
 
 	// Transport is a custom http.RoundTripper to use.
 	Transport http.RoundTripper
@@ -112,6 +116,8 @@ func (d *Disco) CredentialsForHost(hostname svchost.Hostname) (auth.HostCredenti
 	if d.credsSrc == nil {
 		return nil, nil
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if aliasedHost, aliasExists := d.aliases[hostname]; aliasExists {
 		log.Printf("[DEBUG] CredentialsForHost found alias %s for %s", hostname, aliasedHost)
 		hostname = aliasedHost
@@ -134,6 +140,7 @@ func (d *Disco) ForceHostServices(hostname svchost.Hostname, services map[string
 		services = map[string]interface{}{}
 	}
 
+	d.mu.Lock()
 	d.hostCache[hostname] = &Host{
 		discoURL: &url.URL{
 			Scheme: "https",
@@ -144,13 +151,16 @@ func (d *Disco) ForceHostServices(hostname svchost.Hostname, services map[string
 		services:  services,
 		transport: d.Transport,
 	}
+	d.mu.Unlock()
 }
 
 // Alias accepts an alias and target Hostname. When service discovery is performed
 // or credentials are requested for the alias hostname, the target will be consulted instead.
 func (d *Disco) Alias(alias, target svchost.Hostname) {
 	log.Printf("[DEBUG] Service discovery for %s aliased as %s", target, alias)
+	d.mu.Lock()
 	d.aliases[alias] = target
+	d.mu.Unlock()
 }
 
 // Discover runs the discovery protocol against the given hostname (which must
@@ -164,15 +174,29 @@ func (d *Disco) Alias(alias, target svchost.Hostname) {
 // or due to the host not providing Terraform services at all, since we don't
 // wish to expose the detail of whole-host discovery to an end-user.
 func (d *Disco) Discover(hostname svchost.Hostname) (*Host, error) {
+	// In this method we use d.mu locking only to avoid corrupting d.hostCache
+	// by concurrent writes, and not to prevent concurrent discovery requests.
+	// If two clients concurrently request the same hostname then we could
+	// potentially send two concurrent discovery requests over the network,
+	// in which case it's unspecified which one will "win" and end up being
+	// stored in the cache for future requests. In practice this shouldn't
+	// matter because we're already assuming (by caching the results at all)
+	// that a host will generally not vary its results in meaningful ways
+	// between requests made in close time proximity.
+	d.mu.Lock()
 	if host, cached := d.hostCache[hostname]; cached {
+		d.mu.Unlock()
 		return host, nil
 	}
+	d.mu.Unlock()
 
 	host, err := d.discover(hostname)
 	if err != nil {
 		return nil, err
 	}
+	d.mu.Lock()
 	d.hostCache[hostname] = host
+	d.mu.Unlock()
 
 	return host, nil
 }
@@ -189,11 +213,17 @@ func (d *Disco) DiscoverServiceURL(hostname svchost.Hostname, serviceID string) 
 
 // discover implements the actual discovery process, with its result cached
 // by the public-facing Discover method.
+//
+// This must be called _without_ d.mu locked. d.mu is there only to protect
+// the integrity of our internal maps, and not to prevent multiple concurrent
+// service discovery lookups even for the same hostname.
 func (d *Disco) discover(hostname svchost.Hostname) (*Host, error) {
+	d.mu.Lock()
 	if aliasedHost, aliasExists := d.aliases[hostname]; aliasExists {
 		log.Printf("[DEBUG] Discover found alias %s for %s", hostname, aliasedHost)
 		hostname = aliasedHost
 	}
+	d.mu.Unlock()
 
 	discoURL := &url.URL{
 		Scheme: "https",
@@ -296,17 +326,30 @@ func (d *Disco) discover(hostname svchost.Hostname) (*Host, error) {
 // Forget invalidates any cached record of the given hostname. If the host
 // has no cache entry then this is a no-op.
 func (d *Disco) Forget(hostname svchost.Hostname) {
+	d.mu.Lock()
+	d.forgetInternal(hostname)
+	d.mu.Unlock()
+}
+
+// forgetInternal is the main implementation of Forget that assumes the
+// caller has already locked d.mu, so this can also be used in other
+// places like ForgetAlias.
+func (d *Disco) forgetInternal(hostname svchost.Hostname) {
 	delete(d.hostCache, hostname)
 }
 
 // ForgetAll is like Forget, but for all of the hostnames that have cache entries.
 func (d *Disco) ForgetAll() {
+	d.mu.Lock()
 	d.hostCache = make(map[svchost.Hostname]*Host)
+	d.mu.Unlock()
 }
 
 // ForgetAlias removes a previously aliased hostname as well as its cached entry, if any exist.
 // If the alias has no target then this is a no-op.
 func (d *Disco) ForgetAlias(alias svchost.Hostname) {
+	d.mu.Lock()
 	delete(d.aliases, alias)
-	d.Forget(alias)
+	d.forgetInternal(alias)
+	d.mu.Unlock()
 }

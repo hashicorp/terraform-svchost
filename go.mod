@@ -8,13 +8,13 @@ require (
 	github.com/hashicorp/go-version v1.6.0
 	github.com/zclconf/go-cty v1.13.2
 	golang.org/x/net v0.12.0
-	golang.org/x/oauth2 v0.6.0
+	golang.org/x/oauth2 v0.10.0
 )
 
 require (
 	github.com/apparentlymart/go-textseg/v13 v13.0.0 // indirect
-	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	golang.org/x/text v0.11.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/protobuf v1.28.1 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 )

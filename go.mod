@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/go-version v1.6.0
 	github.com/zclconf/go-cty v1.14.0
 	golang.org/x/net v0.15.0
-	golang.org/x/oauth2 v0.11.0
+	golang.org/x/oauth2 v0.12.0
 )
 
 require (

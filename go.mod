@@ -7,7 +7,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-version v1.6.0
 	github.com/zclconf/go-cty v1.14.1
-	golang.org/x/net v0.19.0
+	golang.org/x/net v0.20.0
 	golang.org/x/oauth2 v0.15.0
 )
 

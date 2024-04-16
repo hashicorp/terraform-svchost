@@ -1,0 +1,12 @@
+# Copyright (c) HashiCorp, Inc.
+
+---
+
+schema: 1.1
+partition: tfc
+category: library
+
+summary:
+  owner: team-tf-cli
+  description: A library for the representation of friendly hostnames
+  visibility: external

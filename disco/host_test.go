@@ -53,15 +53,15 @@ func TestHostServiceURL(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.ID, func(t *testing.T) {
-			url, err := host.ServiceURL(test.ID)
+			serviceUrl, err := host.ServiceURL(test.ID)
 			if (err != nil || test.err != "") &&
 				(err == nil || !strings.Contains(err.Error(), test.err)) {
 				t.Fatalf("unexpected service URL error: %s", err)
 			}
 
 			var got string
-			if url != nil {
-				got = url.String()
+			if serviceUrl != nil {
+				got = serviceUrl.String()
 			} else {
 				got = "<nil>"
 			}

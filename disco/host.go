@@ -202,10 +202,8 @@ func (h *Host) ServiceOAuthClient(id string) (*OAuthClient, error) {
 			return nil, fmt.Errorf("Failed to parse authorization URL: %v", err)
 		}
 		ret.AuthorizationURL = u
-	} else {
-		if grantTypes.RequiresAuthorizationEndpoint() {
-			return nil, fmt.Errorf("Service %s definition is missing required property \"authz\"", id)
-		}
+	} else if grantTypes.RequiresAuthorizationEndpoint() {
+		return nil, fmt.Errorf("Service %s definition is missing required property \"authz\"", id)
 	}
 	if urlStr, ok := raw["token"].(string); ok {
 		u, err := h.parseURL(urlStr)
@@ -213,10 +211,8 @@ func (h *Host) ServiceOAuthClient(id string) (*OAuthClient, error) {
 			return nil, fmt.Errorf("Failed to parse token URL: %v", err)
 		}
 		ret.TokenURL = u
-	} else {
-		if grantTypes.RequiresTokenEndpoint() {
-			return nil, fmt.Errorf("Service %s definition is missing required property \"token\"", id)
-		}
+	} else if grantTypes.RequiresTokenEndpoint() {
+		return nil, fmt.Errorf("Service %s definition is missing required property \"token\"", id)
 	}
 	if portsRaw, ok := raw["ports"].([]interface{}); ok {
 		if len(portsRaw) != 2 {

@@ -361,7 +361,7 @@ func TestVersionConstrains(t *testing.T) {
 	baseURL, _ := url.Parse("https://example.com/disco/foo.json")
 
 	t.Run("exact service version is provided", func(t *testing.T) {
-		portStr, close := testVersionsServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testVersionsServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`
 {
 	"service": "%s",
@@ -378,7 +378,7 @@ func TestVersionConstrains(t *testing.T) {
 			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		host := Host{
 			discoURL:  baseURL,
@@ -409,7 +409,7 @@ func TestVersionConstrains(t *testing.T) {
 	})
 
 	t.Run("service provided with different versions", func(t *testing.T) {
-		portStr, close := testVersionsServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testVersionsServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`
 {
 	"service": "%s",
@@ -426,7 +426,7 @@ func TestVersionConstrains(t *testing.T) {
 			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		host := Host{
 			discoURL:  baseURL,
@@ -473,8 +473,8 @@ func TestVersionConstrains(t *testing.T) {
 	})
 
 	t.Run("versions service returns a 404", func(t *testing.T) {
-		portStr, close := testVersionsServer(nil)
-		defer close()
+		portStr, cleanup := testVersionsServer(nil)
+		defer cleanup()
 
 		host := Host{
 			discoURL:  baseURL,
@@ -548,7 +548,7 @@ func TestVersionConstrains(t *testing.T) {
 	})
 }
 
-func testVersionsServer(h func(w http.ResponseWriter, r *http.Request)) (portStr string, close func()) {
+func testVersionsServer(h func(w http.ResponseWriter, r *http.Request)) (portStr string, cleanup func()) {
 	server := httptest.NewTLSServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			// Test server always returns 404 if the URL isn't what we expect
@@ -570,9 +570,9 @@ func testVersionsServer(h func(w http.ResponseWriter, r *http.Request)) (portStr
 		portStr = ":" + portStr
 	}
 
-	close = func() {
+	cleanup = func() {
 		server.Close()
 	}
 
-	return portStr, close
+	return portStr, cleanup
 }

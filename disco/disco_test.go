@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 
 func TestDiscover(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
-		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`
 {
 "thingy.v1": "http://example.com/foo",
@@ -40,7 +40,7 @@ func TestDiscover(t *testing.T) {
 			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		givenHost := "localhost" + portStr
 		host, err := svchost.ForComparison(givenHost)
@@ -66,7 +66,7 @@ func TestDiscover(t *testing.T) {
 		}
 	})
 	t.Run("chunked encoding", func(t *testing.T) {
-		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`
 {
 "thingy.v1": "http://example.com/foo",
@@ -82,7 +82,7 @@ func TestDiscover(t *testing.T) {
 			w.Write(resp[5:])
 			w.(http.Flusher).Flush()
 		})
-		defer close()
+		defer cleanup()
 
 		givenHost := "localhost" + portStr
 		host, err := svchost.ForComparison(givenHost)
@@ -109,14 +109,14 @@ func TestDiscover(t *testing.T) {
 	})
 	t.Run("with credentials", func(t *testing.T) {
 		var authHeaderText string
-		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`{}`)
 			authHeaderText = r.Header.Get("Authorization")
 			w.Header().Add("Content-Type", "application/json")
 			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		givenHost := "localhost" + portStr
 		host, err := svchost.ForComparison(givenHost)
@@ -180,12 +180,12 @@ func TestDiscover(t *testing.T) {
 		}
 	})
 	t.Run("not JSON", func(t *testing.T) {
-		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`{"thingy.v1": "http://example.com/foo"}`)
 			w.Header().Add("Content-Type", "application/octet-stream")
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		givenHost := "localhost" + portStr
 		host, err := svchost.ForComparison(givenHost)
@@ -205,12 +205,12 @@ func TestDiscover(t *testing.T) {
 		}
 	})
 	t.Run("malformed JSON", func(t *testing.T) {
-		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`{"thingy.v1": "htt`) // truncated, for example...
 			w.Header().Add("Content-Type", "application/json")
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		givenHost := "localhost" + portStr
 		host, err := svchost.ForComparison(givenHost)
@@ -234,12 +234,12 @@ func TestDiscover(t *testing.T) {
 		// MIME type, but some servers have a weird tendency to just add
 		// "charset" to everything, so we'll make sure we ignore it successfully.
 		// (JSON uses content sniffing for encoding detection, not media type params.)
-		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`{"thingy.v1": "http://example.com/foo"}`)
 			w.Header().Add("Content-Type", "application/json; charset=latin-1")
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		givenHost := "localhost" + portStr
 		host, err := svchost.ForComparison(givenHost)
@@ -258,10 +258,10 @@ func TestDiscover(t *testing.T) {
 		}
 	})
 	t.Run("no discovery doc", func(t *testing.T) {
-		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(404)
 		})
-		defer close()
+		defer cleanup()
 
 		givenHost := "localhost" + portStr
 		host, err := svchost.ForComparison(givenHost)
@@ -284,10 +284,10 @@ func TestDiscover(t *testing.T) {
 	t.Run("discovery error", func(t *testing.T) {
 		// Make a channel and then ignore messages to simulate a Client.Timeout
 		donec := make(chan bool, 1)
-		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			<-donec
 		})
-		defer close()
+		defer cleanup()
 		defer func() { donec <- true }()
 
 		givenHost := "localhost" + portStr
@@ -368,7 +368,7 @@ func TestDiscover(t *testing.T) {
 	t.Run("alias", func(t *testing.T) {
 		// The server will listen on localhost and we will expect this response
 		// by requesting discovery on the alias.
-		portStr, close := testServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`
 {
 "thingy.v1": "http://example.com/foo"
@@ -378,7 +378,7 @@ func TestDiscover(t *testing.T) {
 			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		target, err := svchost.ForComparison("localhost" + portStr)
 		if err != nil {
@@ -434,7 +434,7 @@ func TestDiscover(t *testing.T) {
 	})
 }
 
-func testServer(h func(w http.ResponseWriter, r *http.Request)) (portStr string, close func()) {
+func testServer(h func(w http.ResponseWriter, r *http.Request)) (portStr string, cleanup func()) {
 	server := httptest.NewTLSServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			// Test server always returns 404 if the URL isn't what we expect
@@ -456,9 +456,9 @@ func testServer(h func(w http.ResponseWriter, r *http.Request)) (portStr string,
 		portStr = ":" + portStr
 	}
 
-	close = func() {
+	cleanup = func() {
 		server.Close()
 	}
 
-	return portStr, close
+	return portStr, cleanup
 }

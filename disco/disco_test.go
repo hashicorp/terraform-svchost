@@ -327,7 +327,7 @@ func TestDiscover(t *testing.T) {
 		})
 		portStr2, close2 := testServer(func(w http.ResponseWriter, r *http.Request) {
 			// This server is the one that redirects.
-			http.Redirect(w, r, "https://localhost"+portStr1+"/.well-known/terraform.json", 302)
+			http.Redirect(w, r, "https://localhost"+portStr1+"/.well-known/terraform.json", http.StatusFound)
 		})
 		defer close1()
 		defer close2()
@@ -362,7 +362,6 @@ func TestDiscover(t *testing.T) {
 		if gotBaseURL != wantBaseURL {
 			t.Errorf("incorrect base url %s; want %s", gotBaseURL, wantBaseURL)
 		}
-
 	})
 
 	t.Run("alias", func(t *testing.T) {

@@ -38,7 +38,7 @@ const (
 )
 
 // httpTransport is overridden during tests, to skip TLS verification.
-var httpTransport = defaultHttpTransport()
+var httpTransport = defaultHTTPTransport()
 
 // Disco is the main type in this package, which allows discovery on given
 // hostnames and caches the results by hostname to avoid repeated requests
@@ -62,8 +62,8 @@ type ErrServiceDiscoveryNetworkRequest struct {
 }
 
 func (e ErrServiceDiscoveryNetworkRequest) Error() string {
-	wrapped_error := fmt.Errorf("failed to request discovery document: %w", e.err)
-	return wrapped_error.Error()
+	wrappedError := fmt.Errorf("failed to request discovery document: %w", e.err)
+	return wrappedError.Error()
 }
 
 // New returns a new initialized discovery object.

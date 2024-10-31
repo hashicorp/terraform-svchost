@@ -168,6 +168,7 @@ func (h *Host) ServiceOAuthClient(id string) (*OAuthClient, error) {
 	}
 
 	var grantTypes OAuthGrantTypeSet
+	//nolint:nestif
 	if rawGTs, ok := raw["grant_types"]; ok {
 		if gts, ok := rawGTs.([]interface{}); ok {
 			var kws []string
@@ -214,6 +215,7 @@ func (h *Host) ServiceOAuthClient(id string) (*OAuthClient, error) {
 	} else if grantTypes.RequiresTokenEndpoint() {
 		return nil, fmt.Errorf("service %s definition is missing required property \"token\"", id)
 	}
+	//nolint:nestif
 	if portsRaw, ok := raw["ports"].([]interface{}); ok {
 		if len(portsRaw) != 2 {
 			return nil, fmt.Errorf("invalid \"ports\" definition for service %s: must be a two-element array", id)
@@ -330,6 +332,7 @@ func (h *Host) VersionConstraints(id, product string) (*Constraints, error) {
 	}
 
 	// Check if we have an exact (service and version) match.
+	//nolint:nestif
 	if _, ok := h.services[id].(string); !ok {
 		// If we don't have an exact match, we search for all matching
 		// services and then use the service ID of the latest version.

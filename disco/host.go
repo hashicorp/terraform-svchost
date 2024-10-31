@@ -412,10 +412,10 @@ func parseServiceID(id string) (string, *version.Version, error) {
 		return "", nil, fmt.Errorf("Invalid service ID format (i.e. service.vN): %s", id)
 	}
 
-	version, err := version.NewVersion(parts[1])
+	parsedVersion, err := version.NewVersion(parts[1])
 	if err != nil {
 		return "", nil, fmt.Errorf("Invalid service version: %v", err)
 	}
 
-	return parts[0], version, nil
+	return parts[0], parsedVersion, nil
 }

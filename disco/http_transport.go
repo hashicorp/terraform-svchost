@@ -10,7 +10,7 @@ import (
 
 const DefaultUserAgent = "terraform-svchost/1.0"
 
-func defaultHttpTransport() http.RoundTripper {
+func defaultHTTPTransport() http.RoundTripper {
 	t := cleanhttp.DefaultPooledTransport()
 	return &userAgentRoundTripper{
 		innerRt:   t,

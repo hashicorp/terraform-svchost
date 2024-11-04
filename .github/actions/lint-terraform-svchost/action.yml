@@ -1,0 +1,25 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+name: Lint
+description: Lints terraform-svchost
+runs:
+  using: composite
+  steps:
+    - name: Setup Go Environment
+      uses: actions/setup-go@cdcb36043654635271a94b9a6d1392de5bb323a7 # v5.0.1
+      with:
+        go-version-file: "go.mod"
+        cache: true
+
+    - run: make fmtcheck
+      shell: bash
+
+    - name: Install golangci-lint
+      run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/0b5709648c8ba9780e821faf16c5c2bb3262ce3e/install.sh | sh -s -- -b $(go env GOPATH)/bin $GOLANGCILINT_VERSION
+      shell: bash
+      env:
+        GOLANGCILINT_VERSION: v1.55.2
+
+    - run: make lint
+      shell: bash

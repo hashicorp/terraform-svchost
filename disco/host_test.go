@@ -48,20 +48,20 @@ func TestHostServiceURL(t *testing.T) {
 		{"withfragment.v1", "http://example.org/", ""},
 		{"querystring.v1", "https://example.net/baz?foo=bar", ""},
 		{"nothttp.v1", "<nil>", "unsupported scheme"},
-		{"invalid.v1", "<nil>", "Failed to parse service URL"},
+		{"invalid.v1", "<nil>", "failed to parse service URL"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.ID, func(t *testing.T) {
-			url, err := host.ServiceURL(test.ID)
+			serviceURL, err := host.ServiceURL(test.ID)
 			if (err != nil || test.err != "") &&
 				(err == nil || !strings.Contains(err.Error(), test.err)) {
 				t.Fatalf("unexpected service URL error: %s", err)
 			}
 
 			var got string
-			if url != nil {
-				got = url.String()
+			if serviceURL != nil {
+				got = serviceURL.String()
 			} else {
 				got = "<nil>"
 			}
@@ -212,17 +212,17 @@ func TestHostServiceOAuthClient(t *testing.T) {
 		{
 			"invalidports.v1",
 			nil,
-			`Invalid "ports" definition for service invalidports.v1: both ports must be whole numbers between 1024 and 65535`,
+			`invalid "ports" definition for service invalidports.v1: both ports must be whole numbers between 1024 and 65535`,
 		},
 		{
 			"missingauthz.v1",
 			nil,
-			`Service missingauthz.v1 definition is missing required property "authz"`,
+			`service missingauthz.v1 definition is missing required property "authz"`,
 		},
 		{
 			"missingtoken.v1",
 			nil,
-			`Service missingtoken.v1 definition is missing required property "token"`,
+			`service missingtoken.v1 definition is missing required property "token"`,
 		},
 		{
 			"passwordmissingauthz.v1",
@@ -298,17 +298,17 @@ func TestHostServiceOAuthClient(t *testing.T) {
 		{
 			"nothttp.v1",
 			nil,
-			"Failed to parse authorization URL: unsupported scheme ftp",
+			"failed to parse authorization URL: unsupported scheme ftp",
 		},
 		{
 			"invalidauthz.v1",
 			nil,
-			"Failed to parse authorization URL: parse \"***not A URL at all!:/<@@@@>***\": first path segment in URL cannot contain colon",
+			"failed to parse authorization URL: parse \"***not A URL at all!:/<@@@@>***\": first path segment in URL cannot contain colon",
 		},
 		{
 			"invalidtoken.v1",
 			nil,
-			"Failed to parse token URL: parse \"***not A URL at all!:/<@@@@>***\": first path segment in URL cannot contain colon",
+			"failed to parse token URL: parse \"***not A URL at all!:/<@@@@>***\": first path segment in URL cannot contain colon",
 		},
 		{
 			"scopesincluded.v1",
@@ -338,7 +338,7 @@ func TestHostServiceOAuthClient(t *testing.T) {
 		{
 			"scopesbad.v1",
 			nil,
-			`Invalid "scopes" for service scopesbad.v1: all scopes must be strings`,
+			`invalid "scopes" for service scopesbad.v1: all scopes must be strings`,
 		},
 	}
 
@@ -361,7 +361,7 @@ func TestVersionConstrains(t *testing.T) {
 	baseURL, _ := url.Parse("https://example.com/disco/foo.json")
 
 	t.Run("exact service version is provided", func(t *testing.T) {
-		portStr, close := testVersionsServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testVersionsServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`
 {
 	"service": "%s",
@@ -378,7 +378,7 @@ func TestVersionConstrains(t *testing.T) {
 			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		host := Host{
 			discoURL:  baseURL,
@@ -409,7 +409,7 @@ func TestVersionConstrains(t *testing.T) {
 	})
 
 	t.Run("service provided with different versions", func(t *testing.T) {
-		portStr, close := testVersionsServer(func(w http.ResponseWriter, r *http.Request) {
+		portStr, cleanup := testVersionsServer(func(w http.ResponseWriter, r *http.Request) {
 			resp := []byte(`
 {
 	"service": "%s",
@@ -426,7 +426,7 @@ func TestVersionConstrains(t *testing.T) {
 			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
 			w.Write(resp)
 		})
-		defer close()
+		defer cleanup()
 
 		host := Host{
 			discoURL:  baseURL,
@@ -473,8 +473,8 @@ func TestVersionConstrains(t *testing.T) {
 	})
 
 	t.Run("versions service returns a 404", func(t *testing.T) {
-		portStr, close := testVersionsServer(nil)
-		defer close()
+		portStr, cleanup := testVersionsServer(nil)
+		defer cleanup()
 
 		host := Host{
 			discoURL:  baseURL,
@@ -548,7 +548,7 @@ func TestVersionConstrains(t *testing.T) {
 	})
 }
 
-func testVersionsServer(h func(w http.ResponseWriter, r *http.Request)) (portStr string, close func()) {
+func testVersionsServer(h func(w http.ResponseWriter, r *http.Request)) (portStr string, cleanup func()) {
 	server := httptest.NewTLSServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			// Test server always returns 404 if the URL isn't what we expect
@@ -570,9 +570,9 @@ func testVersionsServer(h func(w http.ResponseWriter, r *http.Request)) (portStr
 		portStr = ":" + portStr
 	}
 
-	close = func() {
+	cleanup = func() {
 		server.Close()
 	}
 
-	return portStr, close
+	return portStr, cleanup
 }

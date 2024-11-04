@@ -58,6 +58,7 @@ func ForDisplay(given string) string {
 	if colonPos := strings.Index(given, ":"); colonPos != -1 {
 		given, portPortion = given[:colonPos], given[colonPos:]
 	}
+	//nolint:errcheck
 	portPortion, _ = normalizePortPortion(portPortion)
 
 	ascii, err := displayProfile.ToASCII(given)

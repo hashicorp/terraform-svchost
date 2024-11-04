@@ -1,0 +1,4 @@
+data_summary:
+  gdpr:
+    exempt: true
+    last_reviewed: 2024-11-04

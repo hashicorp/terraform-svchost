@@ -1,3 +1,5 @@
+# Copyright (c) HashiCorp, Inc.
+
 data_summary:
   gdpr:
     exempt: true

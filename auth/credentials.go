@@ -5,12 +5,12 @@
 package auth
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net/http"
 
+	svchost "github.com/hashicorp/terraform-svchost"
 	"github.com/zclconf/go-cty/cty"
-
-	"github.com/hashicorp/terraform-svchost"
 )
 
 // Credentials is a list of CredentialsSource objects that can be tried in
@@ -68,6 +68,14 @@ type HostCredentials interface {
 	Token() string
 }
 
+// HostCredentialsExtended is an interface that expands HostCredentials
+// to also support mTLS configurations.
+type HostCredentialsExtended interface {
+	HostCredentials
+	GetTLSConfig() (*tls.Config, error)
+	SetToken(token string)
+}
+
 // HostCredentialsWritable is an extension of HostCredentials for credentials
 // objects that can be serialized as a JSON-compatible object value for
 // storage.
@@ -87,15 +95,48 @@ type HostCredentialsWritable interface {
 // ForHost iterates over the contained CredentialsSource objects and
 // tries to obtain credentials for the given host from each one in turn.
 //
-// If any source returns either a non-nil HostCredentials or a non-nil error
-// then this result is returned. Otherwise, the result is nil, nil.
+// If both mTLS and token credentials are found, they are combined into a
+// single HostCredentialsMTLS instance.
+// ForHost iterates over the contained CredentialsSource objects and
+// tries to obtain credentials for the given host from each one in turn.
+//
+// If both mTLS and token credentials are found, they are combined into a
+// single HostCredentialsMTLS instance.
 func (c Credentials) ForHost(host svchost.Hostname) (HostCredentials, error) {
+	var token string
+	var mTLSCreds HostCredentialsExtended
+
 	for _, source := range c {
 		creds, err := source.ForHost(host)
-		if creds != nil || err != nil {
-			return creds, err
+		if err != nil {
+			return nil, err
+		}
+
+		if creds != nil {
+			// Check if credentials include a token
+			token = creds.Token()
+
+			// Check if credentials include mTLS configuration
+			if mtls, ok := creds.(HostCredentialsExtended); ok {
+				mTLSCreds = mtls
+			}
 		}
 	}
+
+	// If mTLS credentials are found, return them (with the token if available)
+	if mTLSCreds != nil {
+		if token != "" {
+			mTLSCreds.(*HostCredentialsMTLS).TokenValue = token // Set token if mTLSCreds is HostCredentialsMTLS
+		}
+		return mTLSCreds, nil
+	}
+
+	// If only a token is found, return it as a token-based credential
+	if token != "" {
+		return HostCredentialsToken(token), nil
+	}
+
+	// No credentials found
 	return nil, nil
 }
 

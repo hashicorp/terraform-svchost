@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	// Fixed path to the discovery manifest.
+	// Fixed path to a host's default discovery manifest.
 	discoPath = "/.well-known/terraform.json"
 
 	// Arbitrary-but-small number to prevent runaway redirect loops.
@@ -45,9 +45,10 @@ var httpTransport = defaultHTTPTransport()
 // for the same information.
 type Disco struct {
 	// must lock "mu" while interacting with these maps
-	aliases   map[svchost.Hostname]svchost.Hostname
-	hostCache map[svchost.Hostname]*Host
-	mu        sync.Mutex
+	aliases     map[svchost.Hostname]svchost.Hostname
+	hostCache   map[svchost.Hostname]*Host
+	urlOverride map[svchost.Hostname]*url.URL
+	mu          sync.Mutex
 
 	credsSrc auth.CredentialsSource
 
@@ -136,21 +137,46 @@ func (d *Disco) CredentialsForHost(hostname svchost.Hostname) (auth.HostCredenti
 // at the host's default discovery URL, though using absolute URLs is strongly
 // recommended to make the configured behavior more explicit.
 func (d *Disco) ForceHostServices(hostname svchost.Hostname, services map[string]interface{}) {
+	discoURL := d.discoveryURLForHost(hostname)
 	if services == nil {
 		services = map[string]interface{}{}
 	}
 
 	d.mu.Lock()
 	d.hostCache[hostname] = &Host{
-		discoURL: &url.URL{
-			Scheme: "https",
-			Host:   string(hostname),
-			Path:   discoPath,
-		},
+		discoURL:  discoURL,
 		hostname:  hostname.ForDisplay(),
 		services:  services,
 		transport: d.Transport,
 	}
+	d.mu.Unlock()
+}
+
+// OverrideHostDiscoveryURL forces the use of the given URL as the discovery document location
+// for the given hostname, overriding the default URL structure using the "https" scheme
+// and the fixed path "/.well-known/terraform.json".
+//
+// Any future request for service discovery with that hostname will attempt to fetch
+// service information from the given URL instead, and will use the results from that discovery
+// as the service information for that hostname.
+//
+// The caller must not modify anything reachable through the given URL pointer after passing
+// it to this function.
+//
+// If the same hostname is used with both this method and [Disco.ForceHostServices] then the
+// latter "wins", because forcing service information for a particular host prevents making
+// a service discovery request for that hostname over the network at all. However, any relative
+// URLs in the metadata passed to ForceHostServices will be resolved relative to the overridden
+// discovery URL instead of the default URL structure.
+//
+// All calls to this method should be made before performing any service discovery requests.
+func (d *Disco) OverrideHostDiscoveryURL(hostname svchost.Hostname, discoveryURL *url.URL) {
+	d.mu.Lock()
+	if d.urlOverride == nil {
+		// Lazy allocation, because most Disco objects don't use URL overrides at all.
+		d.urlOverride = make(map[svchost.Hostname]*url.URL)
+	}
+	d.urlOverride[hostname] = discoveryURL
 	d.mu.Unlock()
 }
 
@@ -225,12 +251,7 @@ func (d *Disco) discover(hostname svchost.Hostname) (*Host, error) {
 	}
 	d.mu.Unlock()
 
-	discoURL := &url.URL{
-		Scheme: "https",
-		Host:   hostname.String(),
-		Path:   discoPath,
-	}
-
+	discoURL := d.discoveryURLForHost(hostname)
 	client := &http.Client{
 		Transport: d.Transport,
 		Timeout:   discoTimeout,
@@ -321,6 +342,24 @@ func (d *Disco) discover(hostname svchost.Hostname) (*Host, error) {
 	host.services = services
 
 	return host, nil
+}
+
+// discoveryURLForHost returns the URL to fetch to find the service discovery
+// document (if any) relating to the given hostname.
+func (d *Disco) discoveryURLForHost(hostname svchost.Hostname) *url.URL {
+	d.mu.Lock() // prevent concurrent access to d.urlOverride
+	defer d.mu.Unlock()
+	if override, ok := d.urlOverride[hostname]; ok {
+		return override
+	}
+	// Any hostname that doesn't have an override -- which is typically all of them --
+	// gets a systematically-generated discovery URL using the RFC8615 "well-known"
+	// path structure.
+	return &url.URL{
+		Scheme: "https",
+		Host:   hostname.String(),
+		Path:   discoPath,
+	}
 }
 
 // Forget invalidates any cached record of the given hostname. If the host

@@ -135,6 +135,66 @@ func TestDiscover(t *testing.T) {
 			t.Fatalf("wrong Authorization header\ngot:  %s\nwant: %s", got, want)
 		}
 	})
+	t.Run("discovery document URL override", func(t *testing.T) {
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
+			resp := []byte(`
+				{
+					"thingy.v1": "/foo",
+					"wotsit.v2": "http://example.net/bar"
+				}
+			`)
+			w.Header().Add("Content-Type", "application/json")
+			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
+			w.Write(resp)
+		})
+		defer cleanup()
+
+		host := svchost.Hostname("example.com")
+		overrideURL := &url.URL{
+			Scheme: "https",
+			Host:   "localhost" + portStr,
+
+			// The following uses the well-known path just because that's what testServer
+			// expects. This is allowed to be any path that's valid as far as URL syntax is
+			// concerned.
+			Path: "/.well-known/terraform.json",
+		}
+		t.Logf("discovery URL for %s overridden as %s", host.ForDisplay(), overrideURL.String())
+
+		d := New()
+		d.OverrideHostDiscoveryURL(host, overrideURL)
+		discovered, err := d.Discover(host)
+		if err != nil {
+			t.Fatalf("unexpected discovery error: %s", err)
+		}
+
+		{
+			gotURL, err := discovered.ServiceURL("thingy.v1")
+			if err != nil {
+				t.Fatalf("unexpected service URL error: %s", err)
+			}
+			if gotURL == nil {
+				t.Fatalf("found no URL for thingy.v1")
+			}
+			// NOTE: relative URL intentionally resolved relative to the overridden
+			// discovery document URL, rather than the default document URL.
+			if got, want := gotURL.String(), "https://localhost"+portStr+"/foo"; got != want {
+				t.Fatalf("wrong result %q; want %q", got, want)
+			}
+		}
+		{
+			gotURL, err := discovered.ServiceURL("wotsit.v2")
+			if err != nil {
+				t.Fatalf("unexpected service URL error: %s", err)
+			}
+			if gotURL == nil {
+				t.Fatalf("found no URL for wotsit.v2")
+			}
+			if got, want := gotURL.String(), "http://example.net/bar"; got != want {
+				t.Fatalf("wrong result %q; want %q", got, want)
+			}
+		}
+	})
 	t.Run("forced services override", func(t *testing.T) {
 		forced := map[string]interface{}{
 			"thingy.v1": "http://example.net/foo",

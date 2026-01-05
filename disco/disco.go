@@ -1,4 +1,4 @@
-// Copyright (c) HashiCorp, Inc.
+// Copyright IBM Corp. 2017, 2025
 
 // Package disco handles Terraform's remote service discovery protocol.
 //

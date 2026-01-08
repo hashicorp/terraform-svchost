@@ -3,7 +3,6 @@
 package disco
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -14,7 +13,6 @@ import (
 func TestHedgedTransport_MultipleAttempts(t *testing.T) {
 	var requestCount int32
 	hedgeTimeout := 50 * time.Millisecond
-	serverSleep := 150 * time.Millisecond
 	maxAttempts := 7
 
 	// Create a slow test server that would require 3 hedged attempts to succeed
@@ -22,15 +20,13 @@ func TestHedgedTransport_MultipleAttempts(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&requestCount, 1)
 
-		// Wait longer than the hedge timeout to trigger multiple attempts
-		select {
-		case <-time.After(serverSleep):
+		if count := atomic.LoadInt32(&requestCount); count >= 3 {
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, "success")
-		case <-r.Context().Done():
-			// This demonstrates that cancellation is working!
+			w.Write([]byte("success"))
 			return
 		}
+
+		<-r.Context().Done()
 	}))
 	defer ts.Close()
 

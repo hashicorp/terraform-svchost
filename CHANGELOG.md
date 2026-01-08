@@ -2,7 +2,7 @@
 
 #### Enhancements
 
-Highly latent requests during service discovery are rare but happen many times per day. Service discovery now implement a hedged request strategy, where the service discovery request is repeated up to 7 times at 1500 ms intervals until the server responds.
+Highly latent requests during service discovery are rare but happen many times per day. Service discovery now implements a hedged request strategy, where the service discovery request is repeated up to 7 times at 1500 ms intervals until the server responds.
 
 ## v0.1.1
 

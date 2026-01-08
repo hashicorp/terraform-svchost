@@ -3,6 +3,7 @@
 package disco
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -32,7 +33,7 @@ func TestHedgedTransport_MultipleAttempts(t *testing.T) {
 
 	transport := newHedgedHTTPTransport(http.DefaultTransport, hedgeTimeout, maxAttempts)
 
-	req, _ := http.NewRequestWithContext(t.Context(), "GET", ts.URL, nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", ts.URL, nil)
 
 	start := time.Now()
 	resp, err := transport.RoundTrip(req)

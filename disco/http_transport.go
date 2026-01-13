@@ -93,7 +93,8 @@ func (ht *hedgedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		select {
 		case res := <-results:
 			received++
-			if res.err == nil {
+			// Retry on error (no response) or 5xx
+			if res.err == nil && res.res.StatusCode < 500 {
 				return res.res, nil
 			}
 			// Don't leak response bodies

@@ -31,8 +31,9 @@ const (
 	// Arbitrary-but-small number to prevent runaway redirect loops.
 	maxRedirects = 3
 
-	// Arbitrary-but-small time limit to prevent UI "hangs" during discovery.
-	discoTimeout = 11 * time.Second
+	// This timeout should very seldom be needed- it would depend on the server
+	// being very slow or unresponsive for seven consecutive hedged requests.
+	discoTimeout = 15 * time.Second
 
 	// Interval between hedged requests.
 	hedgeTimeout = 1500 * time.Millisecond

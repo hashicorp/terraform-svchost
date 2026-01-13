@@ -104,7 +104,7 @@ func (ht *hedgedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			lastErr = res.err
 			// If all attempts we started have failed AND we've reached the limit
 			if received == ht.maxAttempts {
-				return nil, lastErr
+				return res.res, lastErr
 			}
 		case <-timeout:
 			started++

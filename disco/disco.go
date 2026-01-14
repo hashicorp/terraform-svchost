@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/go-cleanhttp"
 	svchost "github.com/hashicorp/terraform-svchost"
 	"github.com/hashicorp/terraform-svchost/auth"
 )
@@ -30,15 +31,25 @@ const (
 	// Arbitrary-but-small number to prevent runaway redirect loops.
 	maxRedirects = 3
 
-	// Arbitrary-but-small time limit to prevent UI "hangs" during discovery.
-	discoTimeout = 11 * time.Second
+	// This timeout should very seldom be needed- it would depend on the server
+	// being very slow or unresponsive for seven consecutive hedged requests.
+	discoTimeout = 15 * time.Second
+
+	// Interval between hedged requests.
+	hedgeTimeout = 1500 * time.Millisecond
+
+	// Maximum number of hedged requests (including the original).
+	hedgeAttempts = 7
 
 	// 1MB - to prevent abusive services from using loads of our memory.
 	maxDiscoDocBytes = 1 * 1024 * 1024
 )
 
 // httpTransport is overridden during tests, to skip TLS verification.
-var httpTransport = defaultHTTPTransport()
+var httpTransport = newHedgedHTTPTransport(newUserAgentTransport(
+	DefaultUserAgent,
+	cleanhttp.DefaultPooledTransport(),
+), hedgeTimeout, hedgeAttempts)
 
 // Disco is the main type in this package, which allows discovery on given
 // hostnames and caches the results by hostname to avoid repeated requests
@@ -83,10 +94,10 @@ func NewWithCredentialsSource(credsSrc auth.CredentialsSource) *Disco {
 }
 
 func (d *Disco) SetUserAgent(uaString string) {
-	d.Transport = &userAgentRoundTripper{
-		innerRt:   d.Transport,
-		userAgent: uaString,
-	}
+	d.Transport = newHedgedHTTPTransport(newUserAgentTransport(
+		uaString,
+		cleanhttp.DefaultPooledTransport(),
+	), hedgeTimeout, hedgeAttempts)
 }
 
 // SetCredentialsSource provides a credentials source that will be used to

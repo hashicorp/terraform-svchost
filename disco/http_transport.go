@@ -4,7 +4,9 @@ package disco
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -16,6 +18,19 @@ const DefaultUserAgent = "terraform-svchost/1.0"
 type userAgentRoundTripper struct {
 	innerRt   http.RoundTripper
 	userAgent string
+}
+
+type result struct {
+	resp   *http.Response
+	cancel context.CancelFunc
+}
+
+// hedgedBodyWrapper is an io.ReadCloser that cancels the associated hedgedTransport
+// context when closed, ensuring that any resources associated with the winning
+// request are cleaned up when the user is done with the response.
+type hedgedBodyWrapper struct {
+	io.ReadCloser
+	cancel context.CancelFunc
 }
 
 // hedgedTransport implements a hedged HTTP transport that sends multiple
@@ -48,71 +63,128 @@ func newUserAgentTransport(userAgent string, innerRt http.RoundTripper) http.Rou
 }
 
 // RoundTrip implements the http.RoundTripper interface for hedgedTransport
+// it sends the initial request immediately and then sends additional
+// requests if previous ones take too long, returning the first successful
+// response or the first error if all attempts fail.
 func (ht *hedgedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// We use a shared context to cancel all outstanding requests
-	// once the first one returns successfully.
-	ctx, cancel := context.WithCancel(req.Context())
-	defer cancel()
+	reqctx := req.Context()
 
-	type result struct {
-		res *http.Response
-		err error
-	}
+	// Channel for receiving the first successful response
+	results := make(chan *result, 1)
 
-	// Buffer the channel to prevent goroutine leaks.
-	results := make(chan result, ht.maxAttempts)
+	// Buffered channel to track all possible errors. We only return an error if ALL attempts fail.
+	errors := make(chan error, ht.maxAttempts)
 
-	runAttempt := func() {
-		outReq := req.Clone(ctx)
-		resp, err := ht.transport.RoundTrip(outReq)
+	var (
+		mu       sync.Mutex
+		cancels  = make([]context.CancelFunc, ht.maxAttempts)
+		finished bool
+		firstErr error
+	)
 
-		// handle the error case downstream
-		select {
-		case results <- result{resp, err}:
-		case <-ctx.Done():
-			// If context is canceled, someone else won.
-			// Ensure we don't leak the response body.
-			if resp != nil && resp.Body != nil {
-				resp.Body.Close()
+	abort := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		finished = true
+		for _, c := range cancels {
+			if c != nil {
+				c()
 			}
 		}
 	}
-	go runAttempt()
-	var lastErr error
-	started := 1
-	received := 0
 
+	spawn := func(idx int) {
+		mu.Lock()
+		subctx, cancel := context.WithCancel(reqctx)
+		cancels[idx] = cancel
+		mu.Unlock()
+
+		go func(subctx context.Context, c context.CancelFunc, idx int) {
+			spawnreq := req.Clone(subctx)
+			resp, err := ht.transport.RoundTrip(spawnreq)
+
+			if err != nil {
+				errors <- err
+				return
+			}
+
+			mu.Lock()
+			if finished {
+				// The main loop aborted OR another request already won.
+				// We must close this body immediately to prevent a leak.
+				mu.Unlock()
+				if resp != nil && resp.Body != nil {
+					resp.Body.Close()
+				}
+				return
+			}
+
+			finished = true
+
+			// Cancel all other in-flight requests
+			for j, otherCancel := range cancels {
+				if otherCancel != nil && j != idx {
+					otherCancel()
+				}
+			}
+			mu.Unlock()
+
+			results <- &result{resp: resp, cancel: c}
+		}(subctx, cancel, idx)
+	}
+
+	spawned := 0
+	errorsReceived := 0
+
+	// Fire attempt 0 immediately
+	spawn(spawned)
+	spawned++
+
+	// Centralized orchestration loop
 	for {
-		var timeout <-chan time.Time
-
-		// if we haven't started all attempts, use ht.timeout.
-		// if we have, wait indefinitely (effectively until context cancel).
-		if started < ht.maxAttempts {
-			timeout = time.After(ht.timeout)
-		}
 		select {
+		case <-reqctx.Done():
+			abort()
+			return nil, reqctx.Err()
+
 		case res := <-results:
-			received++
-			// Retry on error (no response) or 5xx
-			if res.err == nil && res.res.StatusCode < 500 {
-				return res.res, nil
+			res.resp.Body = &hedgedBodyWrapper{
+				ReadCloser: res.resp.Body,
+				cancel:     res.cancel,
 			}
-			// Don't leak response bodies
-			if res.res != nil && res.res.Body != nil {
-				res.res.Body.Close()
+			return res.resp, nil
+
+		case err := <-errors:
+			errorsReceived++
+			if firstErr == nil {
+				firstErr = err
 			}
-			lastErr = res.err
-			// If all attempts we started have failed AND we've reached the limit
-			if received == ht.maxAttempts {
-				return res.res, lastErr
+
+			// Only return an error if ALL hedges failed
+			if errorsReceived == ht.maxAttempts {
+				abort()
+				return nil, firstErr
 			}
-		case <-timeout:
-			started++
-			go runAttempt()
-		case <-req.Context().Done():
-			return nil, req.Context().Err()
+
+			// If a request fails, don't wait for the timer. Spawn the next hedge immediately.
+			if spawned < ht.maxAttempts {
+				spawn(spawned)
+				spawned++
+			}
+
+		case <-time.After(ht.timeout):
+			if spawned < ht.maxAttempts {
+				spawn(spawned)
+				spawned++
+			}
 		}
 	}
+}
+
+func (w *hedgedBodyWrapper) Close() error {
+	err := w.ReadCloser.Close()
+	w.cancel() // Finally clean up the winner's context
+	return err
 }
 
 // RoundTrip implements the http.RoundTripper interface for userAgentRoundTripper

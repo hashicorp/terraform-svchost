@@ -36,6 +36,9 @@ type hedgedBodyWrapper struct {
 // hedgedTransport implements a hedged HTTP transport that sends multiple
 // requests if a previous request takes too long, with a specified timeout
 // between attempts.
+// Note: As always, it's necessary to close any non-nil response body
+// in order to avoid leaking resources. This is the mechanism by which
+// the successful request context is finally canceled.
 type hedgedTransport struct {
 	// Transport is the underlying RT used to actually make the requests.
 	transport http.RoundTripper

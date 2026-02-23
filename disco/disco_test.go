@@ -433,6 +433,88 @@ func TestDiscover(t *testing.T) {
 	})
 }
 
+// TestDiscover_WithHedgedTransport verifies that Discover works correctly
+// when using the hedged transport as it does in production.
+//
+// Existing disco tests bypass the hedged transport (TestMain overrides
+// httpTransport with a plain http.Transport). This test swaps the global
+// back to a hedged transport to reproduce the production code path where
+// RoundTrip's defer cancel() tears down the connection before the
+// discovery document body is fully read, producing:
+//
+//	"error reading discovery document body: context canceled"
+func TestDiscover_WithHedgedTransport(t *testing.T) {
+	portStr, cleanup := testServerWithHedgedTransport(func(w http.ResponseWriter, r *http.Request) {
+		resp := []byte(`{"thingy.v1": "http://example.com/foo"}`)
+		w.Header().Set("Content-Type", "application/json")
+		flusher := w.(http.Flusher)
+		w.Write(resp[:10])
+		flusher.Flush()
+		time.Sleep(50 * time.Millisecond)
+		w.Write(resp[10:])
+		flusher.Flush()
+	})
+	defer cleanup()
+
+	givenHost := "localhost" + portStr
+	host, err := svchost.ForComparison(givenHost)
+	if err != nil {
+		t.Fatalf("test server hostname is invalid: %s", err)
+	}
+
+	d := New()
+	discovered, err := d.Discover(host)
+	if err != nil {
+		t.Fatalf("unexpected discovery error: %s", err)
+	}
+
+	gotURL, err := discovered.ServiceURL("thingy.v1")
+	if err != nil {
+		t.Fatalf("unexpected service URL error: %s", err)
+	}
+	if gotURL == nil {
+		t.Fatalf("found no URL for thingy.v1")
+	}
+	if got, want := gotURL.String(), "http://example.com/foo"; got != want {
+		t.Fatalf("wrong result %q; want %q", got, want)
+	}
+}
+
+// testServerWithHedgedTransport creates a TLS test server and temporarily
+// swaps the package-level httpTransport to a hedged transport wrapping an
+// insecure TLS transport. This mirrors production where httpTransport is
+// always the hedged variant. The returned cleanup function restores the
+// original transport and closes the server.
+func testServerWithHedgedTransport(h func(w http.ResponseWriter, r *http.Request)) (portStr string, cleanup func()) {
+	server := httptest.NewTLSServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/.well-known/terraform.json" {
+				w.WriteHeader(404)
+				w.Write([]byte("not found"))
+				return
+			}
+			h(w, r)
+		},
+	))
+
+	serverURL, _ := url.Parse(server.URL)
+	portStr = serverURL.Port()
+	if portStr != "" {
+		portStr = ":" + portStr
+	}
+
+	origTransport := httpTransport
+	insecureTransport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	httpTransport = newHedgedHTTPTransport(insecureTransport, 1500*time.Millisecond, 7)
+
+	return portStr, func() {
+		httpTransport = origTransport
+		server.Close()
+	}
+}
+
 func testServer(h func(w http.ResponseWriter, r *http.Request)) (portStr string, cleanup func()) {
 	server := httptest.NewTLSServer(http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,7 @@ package disco
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -95,6 +96,55 @@ func TestHedgedTransport_5XXErrors(t *testing.T) {
 	}
 
 	t.Logf("Total requests: %d, Total duration: %v", count, duration)
+}
+
+// TestHedgedTransport_ResponseBodyReadable verifies that the response body
+// can be fully read after RoundTrip returns.
+//
+// This is a regression test for a bug where RoundTrip's defer cancel()
+// cancels the shared context that all hedged request clones use. Go's HTTP
+// transport tears down connections whose request context is cancelled, so
+// if the body hasn't been fully received yet the caller's io.ReadAll fails
+// with "context canceled".
+//
+// The server uses chunked encoding with a delay between chunks so the full
+// body is NOT sitting in the kernel's TCP receive buffer when RoundTrip
+// returns. Without the delay, the body is often already buffered and the
+// read wins the race against the teardown goroutine — hiding the bug.
+func TestHedgedTransport_ResponseBodyReadable(t *testing.T) {
+	expectedBody := `{"modules.v1": "https://example.com/v1/modules/"}`
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		flusher := w.(http.Flusher)
+		// Send partial body — enough for the transport to return response
+		// headers, but the caller still needs the rest.
+		w.Write([]byte(expectedBody[:20]))
+		flusher.Flush()
+		// Delay ensures the second chunk arrives AFTER defer cancel() has
+		// fired and the teardown goroutine has closed the connection.
+		time.Sleep(50 * time.Millisecond)
+		w.Write([]byte(expectedBody[20:]))
+		flusher.Flush()
+	}))
+	defer ts.Close()
+
+	transport := newHedgedHTTPTransport(http.DefaultTransport, 500*time.Millisecond, 3)
+
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", ts.URL, nil)
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("unexpected RoundTrip error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body after RoundTrip returned: %v", err)
+	}
+	if string(body) != expectedBody {
+		t.Fatalf("unexpected body %q; want %q", string(body), expectedBody)
+	}
 }
 
 func TestHedgedTransport_NoResponseEver(t *testing.T) {

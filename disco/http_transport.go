@@ -4,6 +4,7 @@ package disco
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"time"
 )
@@ -49,10 +50,9 @@ func newUserAgentTransport(userAgent string, innerRt http.RoundTripper) http.Rou
 
 // RoundTrip implements the http.RoundTripper interface for hedgedTransport
 func (ht *hedgedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// We use a shared context to cancel all outstanding requests
-	// once the first one returns successfully.
+	// All hedged request clones share this context so that losing attempts
+	// can be cancelled once a winner is found.
 	ctx, cancel := context.WithCancel(req.Context())
-	defer cancel()
 
 	type result struct {
 		res *http.Response
@@ -95,6 +95,10 @@ func (ht *hedgedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			received++
 			// Retry on error (no response) or 5xx
 			if res.err == nil && res.res.StatusCode < 500 {
+				// Wrap the body so cancel is deferred until the caller
+				// closes it. This keeps the winning connection alive
+				// while the body is being read.
+				res.res.Body = &cancelOnClose{ReadCloser: res.res.Body, cancel: cancel}
 				return res.res, nil
 			}
 			// Don't leak response bodies
@@ -104,15 +108,31 @@ func (ht *hedgedTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 			lastErr = res.err
 			// If all attempts we started have failed AND we've reached the limit
 			if received == ht.maxAttempts {
+				cancel()
 				return res.res, lastErr
 			}
 		case <-timeout:
 			started++
 			go runAttempt()
 		case <-req.Context().Done():
+			cancel()
 			return nil, req.Context().Err()
 		}
 	}
+}
+
+// cancelOnClose wraps an io.ReadCloser to call a context.CancelFunc when
+// Close is called. This allows the hedged transport to keep the winning
+// request's connection alive until the caller finishes reading the body.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnClose) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
 }
 
 // RoundTrip implements the http.RoundTripper interface for userAgentRoundTripper

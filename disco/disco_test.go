@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -332,10 +333,9 @@ func TestDiscover(t *testing.T) {
 		// Closing blockc after Discover returns lets the stalled handler
 		// complete so the test server can shut down cleanly.
 		blockc := make(chan struct{})
-		attemptCount := 0
+		var attemptCount atomic.Int32
 		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
-			attemptCount++
-			if attemptCount == 1 {
+			if attemptCount.Add(1) == 1 {
 				<-blockc
 				return
 			}
@@ -366,8 +366,8 @@ func TestDiscover(t *testing.T) {
 		if discovered == nil {
 			t.Fatalf("discovered should not be nil after successful retry")
 		}
-		if attemptCount < 2 {
-			t.Errorf("expected at least 2 attempts (1 timeout + 1 success), got %d", attemptCount)
+		if attemptCount.Load() < 2 {
+			t.Errorf("expected at least 2 attempts (1 timeout + 1 success), got %d", attemptCount.Load())
 		}
 
 		gotURL, err := discovered.ServiceURL("thingy.v1")

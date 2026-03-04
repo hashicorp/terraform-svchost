@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2017, 2025
+// Copyright IBM Corp. 2017, 2026
 
 package disco
 
@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +24,11 @@ func TestMain(m *testing.M) {
 	httpTransport = &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+
+	// Use minimal retry wait times so tests don't wait for production
+	// back-off intervals.
+	retryWaitMin = 1 * time.Millisecond
+	retryWaitMax = 10 * time.Millisecond
 
 	os.Exit(m.Run())
 }
@@ -281,14 +287,107 @@ func TestDiscover(t *testing.T) {
 			t.Errorf("discovered.services not nil (empty); should be")
 		}
 	})
+	t.Run("retries on 5xx", func(t *testing.T) {
+		attemptCount := 0
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
+			attemptCount++
+			if attemptCount < 3 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			resp := []byte(`{"thingy.v1": "http://example.com/foo"}`)
+			w.Header().Add("Content-Type", "application/json")
+			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
+			w.Write(resp)
+		})
+		defer cleanup()
+
+		givenHost := "localhost" + portStr
+		host, err := svchost.ForComparison(givenHost)
+		if err != nil {
+			t.Fatalf("test server hostname is invalid: %s", err)
+		}
+
+		d := New()
+		discovered, err := d.Discover(host)
+		if err != nil {
+			t.Fatalf("expected success after retries, got: %s", err)
+		}
+		if discovered == nil {
+			t.Fatalf("discovered should not be nil after successful retry")
+		}
+		if attemptCount != 3 {
+			t.Errorf("expected 3 attempts, got %d", attemptCount)
+		}
+
+		gotURL, err := discovered.ServiceURL("thingy.v1")
+		if err != nil {
+			t.Fatalf("unexpected service URL error: %s", err)
+		}
+		if got, want := gotURL.String(), "http://example.com/foo"; got != want {
+			t.Fatalf("wrong result %q; want %q", got, want)
+		}
+	})
+	t.Run("retries on timeout", func(t *testing.T) {
+		// Block only the first request so it times out, then succeed on retry.
+		// Closing blockc after Discover returns lets the stalled handler
+		// complete so the test server can shut down cleanly.
+		blockc := make(chan struct{})
+		var attemptCount atomic.Int32
+		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
+			if attemptCount.Add(1) == 1 {
+				<-blockc
+				return
+			}
+			resp := []byte(`{"thingy.v1": "http://example.com/foo"}`)
+			w.Header().Add("Content-Type", "application/json")
+			w.Header().Add("Content-Length", strconv.Itoa(len(resp)))
+			w.Write(resp)
+		})
+		defer cleanup()
+		defer close(blockc)
+
+		givenHost := "localhost" + portStr
+		host, err := svchost.ForComparison(givenHost)
+		if err != nil {
+			t.Fatalf("test server hostname is invalid: %s", err)
+		}
+
+		d := New()
+		transport := d.Transport.(*http.Transport)
+		origTimeout := transport.ResponseHeaderTimeout
+		transport.ResponseHeaderTimeout = 10 * time.Millisecond
+		defer func() { transport.ResponseHeaderTimeout = origTimeout }()
+
+		discovered, err := d.Discover(host)
+		if err != nil {
+			t.Fatalf("expected success after timeout retry, got: %s", err)
+		}
+		if discovered == nil {
+			t.Fatalf("discovered should not be nil after successful retry")
+		}
+		if attemptCount.Load() < 2 {
+			t.Errorf("expected at least 2 attempts (1 timeout + 1 success), got %d", attemptCount.Load())
+		}
+
+		gotURL, err := discovered.ServiceURL("thingy.v1")
+		if err != nil {
+			t.Fatalf("unexpected service URL error: %s", err)
+		}
+		if got, want := gotURL.String(), "http://example.com/foo"; got != want {
+			t.Fatalf("wrong result %q; want %q", got, want)
+		}
+	})
 	t.Run("discovery error", func(t *testing.T) {
-		// Make a channel and then ignore messages to simulate a Client.Timeout
-		donec := make(chan bool, 1)
+		// Block every request to force a timeout on every attempt (including
+		// retries). Closing the channel at the end unblocks all handlers so
+		// the test server can shut down cleanly.
+		donec := make(chan struct{})
 		portStr, cleanup := testServer(func(w http.ResponseWriter, r *http.Request) {
 			<-donec
 		})
 		defer cleanup()
-		defer func() { donec <- true }()
+		defer close(donec)
 
 		givenHost := "localhost" + portStr
 		host, err := svchost.ForComparison(givenHost)

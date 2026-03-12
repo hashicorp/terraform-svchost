@@ -17,9 +17,27 @@ func HostCredentialsFromMap(m map[string]interface{}) HostCredentials {
 	if m == nil {
 		return nil
 	}
+
+	// Check for mTLS credentials
+	clientCert, certOk := m["client_cert"].(string)
+	clientKey, keyOk := m["client_key"].(string)
+	caCert, _ := m["ca_cert"].(string) // CA cert is optional
+
+	if certOk && keyOk {
+		token, _ := m["token"].(string) // token is optional
+		return &HostCredentialsMTLS{
+			ClientCert:    clientCert,
+			ClientKey:     clientKey,
+			CACertificate: caCert,
+			TokenValue:    token,
+		}
+	}
+
+	// If no mTLS, check for token only
 	if token, ok := m["token"].(string); ok {
 		return HostCredentialsToken(token)
 	}
+
 	return nil
 }
 
@@ -32,19 +50,63 @@ func HostCredentialsFromMap(m map[string]interface{}) HostCredentials {
 //
 // If the given value is not of an object type, this function will panic.
 func HostCredentialsFromObject(obj cty.Value) HostCredentials {
-	if !obj.Type().HasAttribute("token") {
+	if obj.IsNull() || !obj.IsKnown() {
 		return nil
 	}
 
-	tokenV := obj.GetAttr("token")
-	if tokenV.IsNull() || !tokenV.IsKnown() {
-		return nil
+	// Check for mTLS credentials
+	mtlsConfig := mTLSCredentialsFromObject(obj)
+	if mtlsConfig != nil {
+		token := ""
+		if obj.Type().HasAttribute("token") {
+			tokenV := obj.GetAttr("token")
+			if !tokenV.IsNull() && tokenV.IsKnown() && cty.String.Equals(tokenV.Type()) {
+				token = tokenV.AsString()
+			}
+		}
+		return &HostCredentialsMTLS{
+			ClientCert:    mtlsConfig.ClientCert,
+			ClientKey:     mtlsConfig.ClientKey,
+			CACertificate: mtlsConfig.CACertificate,
+			TokenValue:    token,
+		}
 	}
-	if !cty.String.Equals(tokenV.Type()) {
-		// Weird, but maybe some future Terraform version accepts an object
-		// here for some reason, so we'll be resilient.
+
+	// Check for token only
+	if obj.Type().HasAttribute("token") {
+		tokenV := obj.GetAttr("token")
+		if !tokenV.IsNull() && tokenV.IsKnown() && cty.String.Equals(tokenV.Type()) {
+			return HostCredentialsToken(tokenV.AsString())
+		}
+	}
+
+	return nil
+}
+
+func mTLSCredentialsFromObject(obj cty.Value) *HostCredentialsMTLS {
+	if obj.IsNull() || !obj.IsKnown() || !obj.CanIterateElements() {
 		return nil
 	}
 
-	return HostCredentialsToken(tokenV.AsString())
+	var cert, key, caCert string
+
+	if certAttr := obj.GetAttr("client_cert"); certAttr.IsKnown() && !certAttr.IsNull() {
+		cert = certAttr.AsString()
+	}
+	if keyAttr := obj.GetAttr("client_key"); keyAttr.IsKnown() && !keyAttr.IsNull() {
+		key = keyAttr.AsString()
+	}
+	if caAttr := obj.GetAttr("ca_cert"); caAttr.IsKnown() && !caAttr.IsNull() {
+		caCert = caAttr.AsString()
+	}
+
+	if cert != "" && key != "" {
+		return &HostCredentialsMTLS{
+			ClientCert:    cert,
+			ClientKey:     key,
+			CACertificate: caCert,
+		}
+	}
+
+	return nil
 }

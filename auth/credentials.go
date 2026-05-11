@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2017, 2025
+// Copyright IBM Corp. 2017, 2026
 
 // Package auth contains types and functions to manage authentication
 // credentials for service hosts.
